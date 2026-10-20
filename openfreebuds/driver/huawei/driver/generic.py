@@ -37,6 +37,12 @@ class OfbDriverHuaweiGeneric(OfbDriverSppGeneric):
         }
 
     async def _start_all_handlers(self):
+        # Big-data capability answer is common for all Huawei devices:
+        # add it no matter which handlers list is set by model driver
+        from openfreebuds.driver.huawei.handler.config_big_data_capability import OfbHuaweiBigDataCapabilityHandler
+        if not any(isinstance(h, OfbHuaweiBigDataCapabilityHandler) for h in self.handlers):
+            self.handlers.append(OfbHuaweiBigDataCapabilityHandler())
+
         # Bind all handlers
         for handler in self.handlers:
             log.debug(f'Attach handler "{handler.handler_id}"')
