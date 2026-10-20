@@ -14,6 +14,7 @@ from .config_wind_suppression import OfbHuaweiConfigWindSuppressionHandler
 from .config_big_data_capability import OfbHuaweiBigDataCapabilityHandler
 from .sound_quality_preference import OfnHuaweiSoundQualityPreferenceHandler
 from .info import OfbHuaweiInfoHandler
+from .device_identity import OfbHuaweiDeviceIdentityHandler
 from .logs import OfbHuaweiLogsHandler
 from .service_language import OfbHuaweiVoiceLanguageHandler
 from .state_in_ear import OfbHuaweiStateInEarHandler

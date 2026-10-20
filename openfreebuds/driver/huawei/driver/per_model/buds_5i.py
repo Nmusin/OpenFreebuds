@@ -10,6 +10,7 @@ class OfbDriverHuawei5I(OfbDriverHuaweiGeneric):
         super().__init__(address)
         self.handlers = [
             OfbHuaweiInfoHandler(),
+            OfbHuaweiDeviceIdentityHandler(),
             OfbHuaweiStateInEarHandler(),
             OfbHuaweiBatteryHandler(),
             OfbHuaweiAncHandler(w_cancel_lvl=True, w_cancel_dynamic=True),
