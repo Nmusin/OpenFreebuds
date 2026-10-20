@@ -45,6 +45,7 @@ class OfbHuaweiEqualizerPresetHandler(OfbDriverHandlerHuawei):
             wo_read: bool = False,
             w_custom_rows: int = 10,
             w_custom_max_count: int = 3,
+            w_custom_local: bool = False,
     ):
         """
         Equalizer configuration handler
@@ -55,13 +56,27 @@ class OfbHuaweiEqualizerPresetHandler(OfbDriverHandlerHuawei):
         @param wo_read: Disallow read request flag (for legacy devices)
         @param w_custom_rows: Count of equalizer rows, for custom modes
         @param w_custom_max_count: Max count of custom modes available in device
+        @param w_custom_local: Custom presets are stored client-side only (5i):
+            device never returns the custom slot list in 2B4A, wire payload
+            uses tag order 1-2-5-3-4 and preset name is capped to 24 UTF-8 bytes
         """
         self.w_custom: bool = w_custom
         self.wo_read: bool = wo_read
         self.w_custom_rows = w_custom_rows
         self.w_custom_max_count = w_custom_max_count
         self.w_fake_built_in = w_fake_built_in
+        self.w_custom_local = w_custom_local
         self.w_options_predefined: bool = w_presets is not None
+
+        # Wire TLV order for custom payload: plugin v4 builds 1,2,5,3,4
+        # (SET_COMMANDS.md §2.2), legacy openfreebuds order was 1,2,3,4,5
+        self.tag_order: Optional[tuple[int, ...]] = (1, 2, 5, 3, 4) if w_custom_local else None
+
+        # Client-side store of custom presets, mode_id -> (label, rows bytes).
+        # Needed because some devices (FreeBuds 5i, live-confirmed 2026-10-20)
+        # never return saved custom presets in 2B4A (tags 6/7/8 are always
+        # empty), so the list of custom presets exists only on the client.
+        self.custom_local_presets: dict[int, tuple[str, bytes]] = {}
 
         self.changes_saved: bool = True
         self.current_rollback_data: bytes = b""
@@ -121,7 +136,7 @@ class OfbHuaweiEqualizerPresetHandler(OfbDriverHandlerHuawei):
 
         pkg = HuaweiSppPackage.change_rq(
             b"\x2b\x49",
-            _build_payload(mode_id, mode_str, data, 1)
+            _build_payload(mode_id, self._wire_name(mode_str), data, 1, self.tag_order)
         )
         await self.driver.send_package(pkg)
         await self.driver.put_property("sound", "equalizer_rows",
@@ -142,9 +157,12 @@ class OfbHuaweiEqualizerPresetHandler(OfbDriverHandlerHuawei):
 
         pkg = HuaweiSppPackage.change_rq(
             b"\x2b\x49",
-            _build_payload(mode_id, mode_str, data, 1)
+            _build_payload(mode_id, self._wire_name(mode_str), data, 1, self.tag_order)
         )
         await self.driver.send_package(pkg)
+        if mode_id in self.custom_local_presets:
+            # Keep the client-side store in sync with the device slot
+            self.custom_local_presets[mode_id] = (mode_str, data)
         await self.driver.put_property("sound", "equalizer_rows", value)
         await self.driver.put_property("sound", "equalizer_saved", "false")
         self.changes_saved = False
@@ -159,9 +177,10 @@ class OfbHuaweiEqualizerPresetHandler(OfbDriverHandlerHuawei):
 
         pkg = HuaweiSppPackage.change_rq(
             b"\x2b\x49",
-            _build_payload(mode_id, mode_str, mode_data, 2)
+            _build_payload(mode_id, self._wire_name(mode_str), mode_data, 2, self.tag_order)
         )
         await self.driver.send_package(pkg)
+        self.custom_local_presets.pop(mode_id, None)
         await self.on_init()
 
     async def find_current_mode(self):
@@ -207,14 +226,28 @@ class OfbHuaweiEqualizerPresetHandler(OfbDriverHandlerHuawei):
             while mode_id in custom_modes:
                 mode_id += 1
             self.preset_data.append((mode_id, mode_str, mode_data))
+            if isinstance(mode_data, str):
+                mode_data = bytes.fromhex(mode_data)
+            self.custom_local_presets[mode_id] = (mode_str, mode_data)
             log.info(f"Will create new preset id={mode_id}, data={mode_data}")
 
         if mode_data is not None:
             # Is custom mode, use advanced payload
-            pkg = HuaweiSppPackage.change_rq(
-                b"\x2b\x49",
-                _build_payload(mode_id, mode_str, mode_data, 1)
-            )
+            if self.w_custom_local and not do_create:
+                # Client-side stored custom preset: selecting an existing
+                # slot is done with a bare id frame, the full payload is
+                # reserved for creating or updating slot contents.
+                # Live-confirmed on 5i: select frame is 2B49 `01 01 64`
+                # (SET_COMMANDS.md §2.1, custom slot 1)
+                pkg = HuaweiSppPackage.change_rq(
+                    b"\x2b\x49",
+                    [(1, mode_id)]
+                )
+            else:
+                pkg = HuaweiSppPackage.change_rq(
+                    b"\x2b\x49",
+                    _build_payload(mode_id, self._wire_name(mode_str), mode_data, 1, self.tag_order)
+                )
         else:
             # Is built-in mode
             pkg = HuaweiSppPackage.change_rq(
@@ -258,6 +291,14 @@ class OfbHuaweiEqualizerPresetHandler(OfbDriverHandlerHuawei):
                 # log.info(f"Read custom mode id={mode_id}, label={mode_label}, data={mode_data}")
                 offset += 36
 
+        if self.w_custom_local and len(self.custom_local_presets) > 0:
+            # Device does not report custom slots in 2B4A (5i firmware,
+            # live-confirmed 2026-10-20: tags 6/7/8 are always absent), so
+            # presets created during this session are re-added from the
+            # client-side store after every list re-read.
+            for mode_id, (mode_label, mode_data) in self.custom_local_presets.items():
+                self.preset_data.append((mode_id, mode_label, mode_data.hex()))
+
         log.info(self.preset_data)
 
         new_props["equalizer_preset_options"] = ",".join([l for _, l, _ in self.preset_data])
@@ -280,6 +321,18 @@ class OfbHuaweiEqualizerPresetHandler(OfbDriverHandlerHuawei):
                                        extend_group=True)
 
 
+    def _wire_name(self, mode_str: str) -> str:
+        if not self.w_custom_local:
+            return mode_str
+        # Device keeps a fixed 24-byte name field (EQ_NAME_LENGTH=24,
+        # EqAdjustApi.parseCustomList(): 36-byte records with name at
+        # [12..36)), so the preset name is capped to 24 UTF-8 bytes,
+        # not 24 characters (SET_COMMANDS.md §2.2)
+        while len(mode_str.encode("utf8")) > 24:
+            mode_str = mode_str[:-1]
+        return mode_str
+
+
 def _eq_bytes_to_array(data: bytes | str):
     if isinstance(data, str):
         data = bytes.fromhex(data)
@@ -293,13 +346,17 @@ def _parse_custom_mode(data: bytes):
     return data[0], label, data_lines
 
 
-def _build_payload(mode_id: int, mode_str: str, data: bytes | str, action: int):
+def _build_payload(mode_id: int, mode_str: str, data: bytes | str, action: int,
+                   tag_order: Optional[tuple[int, ...]] = None):
     if isinstance(data, str):
         data = bytes.fromhex(data)
-    return [
-        (1, mode_id),
-        (2, len(data)),
-        (3, data),
-        (4, mode_str.encode("utf8")),
-        (5, action),
-    ]
+    payload = {
+        1: mode_id,
+        2: len(data),
+        3: data,
+        4: mode_str.encode("utf8"),
+        5: action,
+    }
+    if tag_order is None:
+        tag_order = (1, 2, 3, 4, 5)
+    return [(t, payload[t]) for t in tag_order]

@@ -26,7 +26,7 @@ class OfbDriverHuawei5I(OfbDriverHuaweiGeneric):
                 2: "hardbass",
                 3: "treble",
                 9: "voices",
-            }),
+            }, w_custom=True, w_custom_local=True),
             OfbHuaweiVoiceLanguageHandler(),
             OfbHuaweiDualConnectHandler(),
         ]
