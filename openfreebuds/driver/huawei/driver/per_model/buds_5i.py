@@ -18,6 +18,7 @@ class OfbDriverHuawei5I(OfbDriverHuaweiGeneric):
             OfbHuaweiActionLongTapSplitHandler(w_right=True),
             OfbHuaweiActionSwipeGestureHandler(),
             OfbHuaweiConfigAutoPauseHandler(),
+            OfbHuaweiConfigWindSuppressionHandler(),
             OfnHuaweiSoundQualityPreferenceHandler(),
             OfbHuaweiLowLatencyPreferenceHandler(),
             OfbHuaweiEqualizerPresetHandler(w_presets={
