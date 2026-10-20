@@ -5,6 +5,7 @@ from .action_long_tap import OfbHuaweiActionLongTapHandler
 from .action_long_tap_split import OfbHuaweiActionLongTapSplitHandler
 from .action_power_button import OfbHuaweiActionsPowerButtonHandler
 from .action_swipe_gesture import OfbHuaweiActionSwipeGestureHandler
+from .action_find_my_buds import OfbHuaweiActionFindMyBudsHandler
 from .anc import OfbHuaweiAncHandler, OfbHuaweiAncLegacyChangeHandler
 from .battery import OfbHuaweiBatteryHandler
 from .config_auto_pause import OfbHuaweiConfigAutoPauseHandler
