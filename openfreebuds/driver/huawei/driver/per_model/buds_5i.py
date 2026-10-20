@@ -19,6 +19,7 @@ class OfbDriverHuawei5I(OfbDriverHuaweiGeneric):
             OfbHuaweiActionLongTapSplitHandler(w_right=True),
             OfbHuaweiActionSwipeGestureHandler(),
             OfbHuaweiActionFindMyBudsHandler(),
+            OfbHuaweiFitTestHandler(),
             OfbHuaweiConfigAutoPauseHandler(),
             OfbHuaweiConfigWindSuppressionHandler(),
             OfnHuaweiSoundQualityPreferenceHandler(),
